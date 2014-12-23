@@ -1,10 +1,12 @@
+import os
+
 __author__ = 'Галлям'
 
 from PyQt5 import QtWidgets, QtCore
 
 
 class LocalFileSystemModel(QtWidgets.QDirModel):
-    file_downloading = QtCore.pyqtSignal(str, str)
+    file_downloading = QtCore.pyqtSignal(str, str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,7 +25,9 @@ class LocalFileSystemModel(QtWidgets.QDirModel):
         urls = mime_data.urls()
         target_path = self.filePath(index)
         for url in urls:
-            self.file_downloading.emit(url.path(), target_path)
+            source_path = os.path.dirname(url.path())
+            filename = os.path.basename(url.path())
+            self.file_downloading.emit(source_path, target_path, filename)
         return True
 
     def supportedDropActions(self) -> QtCore.Qt.DropActions:

@@ -21,7 +21,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.widgets = {}
 
         self.core = Core()
-        self.core.start()
 
         self.create_edit_lines()
         self.create_buttons()

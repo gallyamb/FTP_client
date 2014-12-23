@@ -1,16 +1,17 @@
 __author__ = 'Галлям'
 
-
-import socket
 import logging
 import asyncore
-import asynchat
+
 from PyQt5 import QtCore
+
+from .import asynchat_patched
+
 
 logger = logging.getLogger(__name__)
 
 
-class ProtocolInterpreter(QtCore.QThread, asynchat.async_chat):
+class ProtocolInterpreter(QtCore.QThread, asynchat_patched.AsyncChat):
 
     wait_until_next_command = QtCore.pyqtSignal()                       # 100
     data_canal_opened_transfer_started = QtCore.pyqtSignal()            # 125
@@ -54,7 +55,7 @@ class ProtocolInterpreter(QtCore.QThread, asynchat.async_chat):
 
     def __init__(self, host, port):
         super(QtCore.QThread, self).__init__()
-        super(asynchat.async_chat, self).__init__()
+        super(asynchat_patched.AsyncChat, self).__init__()
         self.create_socket()
         self.set_reuse_addr()
         self.host = host
@@ -159,14 +160,12 @@ class ProtocolInterpreter(QtCore.QThread, asynchat.async_chat):
     def get_current_dir(self):
         self.push(b'PWD\r\n')
 
-    def push(self, data):
+    def push(self, data: bytes):
         super().push(data)
         if data[:4] == b'PASS':
-            self._buffer.append('PASS **********')
+            self.buffer_changed.emit(['PASS *********'])
         else:
-            self._buffer.append(data.decode()[:-2])
-        self.buffer_changed.emit(self._buffer.copy())
-        del self._buffer[:]
+            self.buffer_changed.emit([data.decode()[:-2]])
 
     def send_ip_and_port(self, ip: str, port: tuple):
         ip = ip.split('.')
@@ -186,3 +185,9 @@ class ProtocolInterpreter(QtCore.QThread, asynchat.async_chat):
 
     def set_binary_type(self):
         self.push(b'TYPE I\r\n')
+
+    def change_dir(self, path: str):
+        self.push(b'CWD ' + path.encode() + b'/\r\n')
+
+    def download_file(self, filename: str):
+        self.push(b'RETR ' + filename.encode() + b'\r\n')

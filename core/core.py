@@ -1,10 +1,11 @@
-from core.protocol_interpreter import ProtocolInterpreter
-
+from queue import Queue
+from threading import Thread
 import logging
 
 from PyQt5 import QtCore
 
-from .data_transfer_process import DataTransferProcess
+from core.downloader import Downloader
+from core.protocol_interpreter import ProtocolInterpreter
 from gui.model_view_components.directory_listing_handler import\
     DirectoryListingHandler
 from gui.model_view_components.remote_filesystem_model import FileItem
@@ -16,16 +17,10 @@ logger = logging.getLogger(__name__)
 ftp_std_port = 21
 
 
-class Downloader(QtCore.QObject):
-    def __init__(self, path_to_save: str):
-        super().__init__()
-
-
-class Core(QtCore.QThread):
+class Core(QtCore.QObject):
     new_log = QtCore.pyqtSignal(str)
     already_connected = QtCore.pyqtSignal()
     hostname_not_specified = QtCore.pyqtSignal()
-    new_directory_list = QtCore.pyqtSignal(list)
     update_local_model = QtCore.pyqtSignal()
     ready_to_read_dirlist = QtCore.pyqtSignal()
     update_remote_model = QtCore.pyqtSignal()
@@ -38,7 +33,17 @@ class Core(QtCore.QThread):
         self._password = ""
         self._log = []
         self.active_mode = False
-        self.directory_listing_handler = None
+        self.current_dtp = None
+
+        self.queue = Queue()
+
+        def queue_controller():
+            while True:
+                if self.current_dtp is None:
+                    item = self.queue.get()
+                    item[0](*item[1])
+
+        Thread(target=queue_controller, daemon=True).start()
 
     @QtCore.pyqtSlot()
     def on_log_read(self):
@@ -73,29 +78,57 @@ class Core(QtCore.QThread):
     def set_type_binary(self):
         self.pi.set_binary_type()
 
-    def start_file_downloading(self, source_path: str, path_to_save: str):
-        # self.pi.initiate_passive_mode()
-        # self.pi.push(b'RETR ' + path.encode() + b'\r\n')
-        print(source_path)
-        print(path_to_save)
+    def start_file_downloading(self, source_path: str, path_to_save: str,
+                               filename: str):
+        if self.current_dtp:
+            self.queue.put((self.start_file_downloading,
+                            (source_path, path_to_save, filename)))
+            return
+        logger.debug('file %s downloading started. destination: %s' %
+                     (filename, path_to_save))
+
+        self.pi.change_dir(source_path)
+
+        thread = QtCore.QThread()
+
+        downloader = Downloader(path_to_save, filename)
+
+        self.current_dtp = True
+        self.pi.passive_mode.connect(downloader.data_transfer_process
+                                     .start_transfer)
+
+        downloader.complete.connect(self.update_local_model)
+        downloader.complete.connect(self.set_dtp_to_none)
+        downloader.complete.connect(thread.quit)
+        # downloader.start()
+        downloader.moveToThread(thread)
+
+        thread.start()
+
+        self.pi.initiate_passive_mode()
+        self.pi.download_file(filename)
+
+
+    def set_dtp_to_none(self):
+        self.current_dtp = None
 
     @QtCore.pyqtSlot(FileItem)
     def get_directory_list(self, parent: FileItem):
+        if self.current_dtp is not None:
+            self.queue.put((self.get_directory_list, (parent,)))
+            return
         logger.debug('directory listing getting')
 
         path = parent.file_path
         logger.debug('path: %s' % path + '/')
-        self.pi.push(b'CWD ' + path.encode() + b'/\r\n')
+        self.pi.change_dir(path)
 
-        dlh = DirectoryListingHandler(parent, DataTransferProcess())
-        self.directory_listing_handler = dlh
+        dlh = DirectoryListingHandler(parent)
+        self.current_dtp = dlh
         self.pi.passive_mode.connect(dlh.data_transfer_process.start_transfer)
         dlh.complete.connect(self.update_remote_model)
 
-        def set_dlh_to_none():
-            self.directory_listing_handler = None
-
-        dlh.complete.connect(set_dlh_to_none)
+        dlh.complete.connect(self.set_dtp_to_none)
 
         self.pi.initiate_passive_mode()
 

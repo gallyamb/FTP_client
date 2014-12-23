@@ -13,7 +13,7 @@ class FileSystemExplorer(QtWidgets.QTreeView):
 
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        index = self.model().index("d:")
+        index = self.model().index("/home/gall/Desktop")
         self.expand(index)
         self.scrollTo(index)
         self.setCurrentIndex(index)
