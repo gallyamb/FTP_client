@@ -7,7 +7,7 @@ import asyncore
 import asynchat
 from PyQt5 import QtCore
 
-logger = logging.getLogger('pi')
+logger = logging.getLogger(__name__)
 
 
 class ProtocolInterpreter(QtCore.QThread, asynchat.async_chat):
@@ -129,12 +129,15 @@ class ProtocolInterpreter(QtCore.QThread, asynchat.async_chat):
     def readable(self):
         return True
 
+    def handle_connect(self):
+        pass
+
     def send_username(self, username: str='anonymous'):
-        username_request = bytes(('USER %s\r\n' % username).encode())
+        username_request = bytes(('USER %s\r\n' % username), 'utf8')
         self.push(username_request)
 
     def send_password(self, password: str):
-        password_request = bytes(('PASS %s\r\n' % password).encode())
+        password_request = bytes(('PASS %s\r\n' % password), 'utf8')
         self.push(password_request)
 
     def handle_passive_mode_entering(self):  # 227
@@ -158,7 +161,10 @@ class ProtocolInterpreter(QtCore.QThread, asynchat.async_chat):
 
     def push(self, data):
         super().push(data)
-        self._buffer.append(data.decode()[:-2])
+        if data[:4] == b'PASS':
+            self._buffer.append('PASS **********')
+        else:
+            self._buffer.append(data.decode()[:-2])
         self.buffer_changed.emit(self._buffer.copy())
         del self._buffer[:]
 

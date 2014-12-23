@@ -1,10 +1,13 @@
-from PyQt5 import QtCore, QtWidgets, QtGui
-from switch_case import switch
 import logging
+
+from PyQt5 import QtCore, QtWidgets, QtGui
+
+from switch_case import switch
+
 
 __author__ = 'Галлям'
 
-logger = logging.getLogger('RFSM')
+logger = logging.getLogger(__name__)
 
 
 class FileItem:
@@ -14,7 +17,6 @@ class FileItem:
                  QtCore.QDateTime.currentDateTime(),
                  row_in_parent: int=0):
         self.file_path = file_path
-
         file_name = ""
         if file_path:
             file_name = file_path.split('/')[-1]
@@ -34,7 +36,7 @@ class FileItem:
 
     @property
     def file_name(self):
-        return self.data[0]
+        return self.data[0] if self.file_path else '/'
 
     @property
     def type(self):
@@ -52,7 +54,7 @@ class FileItem:
 
     def __eq__(self, other) -> bool:
         return self.data == other.data and self.children == other.children \
-               and self.file_path == other.file_path
+            and self.file_path == other.file_path
 
     def __ne__(self, other) -> bool:
         return not self == other
@@ -61,69 +63,35 @@ class FileItem:
         return (hash(self.file_path) << 5) & hash(self.file_name)
 
 
+# noinspection PyUnresolvedReferences
 class RemoteFileSystemModel(QtCore.QAbstractItemModel):
-    directory_listing_needed = QtCore.pyqtSignal(str)
+    directory_listing_needed = QtCore.pyqtSignal(FileItem)
     file_uploading = QtCore.pyqtSignal(str, str)
 
     def __init__(self):
         super().__init__()
-        self.last_fetched_item = None
 
         self.root_item = FileItem("", True)
 
-        self.read_dir(self.root_item)
         self.columnCount = 4
 
-        iconProvider = QtWidgets.QFileIconProvider()
+        icon_provider = QtWidgets.QFileIconProvider()
         self.file_icon = QtGui.QIcon('gui/model_view_components/file.png')
-        self.folder_icon = iconProvider.icon(QtWidgets.
-                                             QFileIconProvider.Folder)
+        self.folder_icon = icon_provider.icon(QtWidgets.
+                                              QFileIconProvider.Folder)
 
-    @QtCore.pyqtSlot(list)
-    def handle_directory_list(self, directory_items: list):
-        logger.debug('directory listing handling')
-        if self.last_fetched_item is None:
-            raise Exception('No fetched item to associate with')
-        model_item = self.createIndex(self.last_fetched_item.row, 0,
-                                      self.last_fetched_item)
-        super().rowsAboutToBeInserted.emit(model_item,
-                                           0, len(directory_items) - 1)
-        for item in directory_items:
-            if item.type == 'pdir' or item.type == 'cdir':
-                continue
-            year = int(item.modify[:4])
-            month = int(item.modify[4:6])
-            day = int(item.modify[6:8])
-            date = QtCore.QDate(year, month, day)
-
-            hour = int(item.modify[8:10])
-            minute = int(item.modify[10:12])
-            second = int(item.modify[-2:])
-            time = QtCore.QTime(hour, minute, second)
-
-            date_time = QtCore.QDateTime(date, time)
-            item_to_add = FileItem(self.last_fetched_item.file_path +
-                                   '/%s' % item.name[1:-1], item.type == 'dir',
-                                   self.last_fetched_item,
-                                   item.size if item.type != 'dir'
-                                   else item.sizd,
-                                   date_time)
-            self.last_fetched_item.add_child(item_to_add)
-        self.sort()
-        super().rowsInserted.emit(model_item,
-                                  0, len(directory_items) - 1)
-        self.refresh()
+    def fetch_root(self):
+        self.read_dir(self.root_item)
 
     def sort(self, column: int=0, sort_order=None):
-        self.last_fetched_item.children\
+        self.last_fetched_item.children \
             .sort(key=lambda file_item:
-                (file_item.type, file_item.file_name, file_item.size))
+                  (file_item.type, file_item.file_name, file_item.size))
         for index in range(self.last_fetched_item.child_count()):
             self.last_fetched_item.children[index].row = index
 
     def read_dir(self, parent: FileItem) -> None:
-        self.last_fetched_item = parent
-        self.directory_listing_needed.emit(parent.file_path)
+        self.directory_listing_needed.emit(parent)
 
     def data(self, index: QtCore.QModelIndex,
              role: int=QtCore.Qt.DisplayRole) -> QtCore.QVariant:
@@ -162,7 +130,7 @@ class RemoteFileSystemModel(QtCore.QAbstractItemModel):
                    orientation: QtCore.Qt.Orientation,
                    role: int=QtCore.Qt.DisplayRole) -> QtCore.QVariant:
         if orientation == QtCore.Qt.Horizontal and \
-                        role != QtCore.Qt.DisplayRole:
+           role != QtCore.Qt.DisplayRole:
             return QtCore.QVariant()
         for case in switch(section):
             if case(0):
@@ -237,13 +205,12 @@ class RemoteFileSystemModel(QtCore.QAbstractItemModel):
                      drop_actions: QtCore.Qt.DropActions,
                      row: int, column: int,
                      index: QtCore.QModelIndex) -> bool:
-        if not index.isValid() or not drop_actions &\
-                self.supportedDropActions():
-            return False
         urls = mime_data.urls()
 
         for url in urls:
-            self.file_uploading.emit(url.path()[1:], self.item(index).file_path)
+            print(url)
+            print(url.path())
+            # self.file_uploading.emit(url.path()[1:], self.item(index).file_path)
 
         return True
 
@@ -255,7 +222,7 @@ class RemoteFileSystemModel(QtCore.QAbstractItemModel):
         for index in indexes:
             if index.column() != 0:
                 continue
-            urls.append(QtCore.QUrl(self.item(index).file_path))
+            urls.append(QtCore.QUrl("file://" + self.item(index).file_path))
         data = QtCore.QMimeData()
         data.setUrls(urls)
         return data

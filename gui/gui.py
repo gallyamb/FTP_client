@@ -1,3 +1,5 @@
+from gui.model_view_components.remote_filesystem_model import FileItem
+
 __author__ = 'Галлям'
 
 from PyQt5 import QtWidgets, QtGui, QtCore
@@ -63,11 +65,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menus['more_menu'] = more_menu
 
     def create_actions(self):
-        # new_action = QtWidgets.QAction("&New", self)
-        # new_action.setShortcuts(QtGui.QKeySequence.New)
-        # new_action.setStatusTip("Create new connection")
-        # self.actions['new_action'] = new_action
-
         exit_action = QtWidgets.QAction("&Exit", self)
         exit_action.setShortcuts(QtGui.QKeySequence.Quit)
         exit_action.triggered.connect(self.close)
@@ -75,7 +72,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def create_edit_lines(self):
         host_edit = QtWidgets.QLineEdit()
-        # host_edit.setPlaceholderText('Enter host')
         host_edit.setFixedSize(150, 25)
         host_edit.setToolTip('Enter host name without protocol\r\n'
                              'FTP protocol only supported')
@@ -83,7 +79,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         password_edit = QtWidgets.QLineEdit()
         password_edit.setEchoMode(QtWidgets.QLineEdit.Password)
-        # password_edit.setPlaceholderText('Skip if user "anonymous"')
         password_edit.setFixedSize(150, 25)
         password_edit.setToolTip('Enter password\r\n'
                                  'Password never be saved')
@@ -104,17 +99,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.edit_lines['port_edit'] = port_edit
 
     def connect_remote_file_system(self):
-        self.core.new_directory_list.connect(self.widgets['remote_filesystem']
-                                             .model().handle_directory_list)
+        self.core.ready_to_read_dirlist. \
+            connect(self.widgets['remote_filesystem']
+                    .model()
+                    .fetch_root)
+
+        self.core.update_remote_model.connect(self.widgets['remote_filesystem']
+                                              .model().refresh)
+
         self.widgets['remote_filesystem'] \
             .model() \
             .directory_listing_needed \
             .connect(self.core.get_directory_list)
 
-        self.widgets['remote_filesystem'] \
-            .model() \
-            .file_uploading \
-            .connect(self.core.upload_file)
+        # self.widgets['remote_filesystem'] \
+        #     .model() \
+        #     .file_uploading \
+        #     .connect(self.core.upload_file)
 
     def connect_signals_to_slots(self):
         self.buttons['conn_button'].clicked.connect(self.send_conn_info)
@@ -130,6 +131,10 @@ class MainWindow(QtWidgets.QMainWindow):
             .file_downloading.connect(self.core.start_file_downloading)
         self.core.update_local_model.connect(self.widgets['local_filesystem']
                                              .model().refresh)
+
+    def disconnect_old_remote_model(self):
+        self.core.update_remote_model.disconnect()
+        self.core.ready_to_read_dirlist.disconnect()
 
     def on_already_connected(self):
         warning_window = QtWidgets.QMessageBox()
@@ -147,6 +152,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if warning_window.clickedButton() == yes_button:
             self.core.set_connected(False)
             self.widgets['remote_filesystem'].reinitialise()
+            self.disconnect_old_remote_model()
             self.connect_remote_file_system()
             self.send_conn_info()
         else:
