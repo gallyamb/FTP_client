@@ -54,8 +54,8 @@ class ProtocolInterpreter(QtCore.QThread, asynchat_patched.AsyncChat):
     buffer_changed = QtCore.pyqtSignal(list)
 
     def __init__(self, host, port):
-        super(QtCore.QThread, self).__init__()
-        super(asynchat_patched.AsyncChat, self).__init__()
+        QtCore.QThread.__init__(self)
+        asynchat_patched.AsyncChat.__init__(self)
         self.create_socket()
         self.set_reuse_addr()
         self.host = host
@@ -155,7 +155,8 @@ class ProtocolInterpreter(QtCore.QThread, asynchat_patched.AsyncChat):
         result = result.split(',')
         ip = '.'.join(result[:4])
         port = int(result[4]) * 256 + int(result[5])
-        self.passive_mode[tuple].emit((ip, port))
+        self.passive_mode.emit((ip, port))
+        logger.debug('entering passive mode %s:%s' % (ip, str(port)))
 
     def get_current_dir(self):
         self.push(b'PWD\r\n')

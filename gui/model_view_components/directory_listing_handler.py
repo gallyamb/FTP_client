@@ -10,7 +10,7 @@ __author__ = 'Галлям'
 logger = logging.getLogger(__name__)
 
 
-class DirectoryListingHandler(QtCore.QObject):
+class DirectoryListingHandler(QtCore.QThread):
     complete = QtCore.pyqtSignal()
 
     def __init__(self, parent: FileItem, dt: DataTransferProcess=None):
@@ -20,7 +20,7 @@ class DirectoryListingHandler(QtCore.QObject):
             raise Exception('No fetched item to associate with')
 
         self.data_transfer_process = DataTransferProcess() if dt is None else dt
-        self.data_transfer_process.ready.connect(self.process_dir_list)
+        self.data_transfer_process.ready.connect(self.start)
 
     @staticmethod
     def create_data_container(line: str) -> DataContainer:
@@ -34,7 +34,7 @@ class DirectoryListingHandler(QtCore.QObject):
         return dir_model_item
 
     @QtCore.pyqtSlot()
-    def process_dir_list(self):
+    def run(self):
         logger.debug('directory listing handling')
 
         for line in self.data_transfer_process.read_lines():
@@ -49,6 +49,8 @@ class DirectoryListingHandler(QtCore.QObject):
         self.sort()
 
         logger.debug('dirlist handled')
+        self.data_transfer_process.ready.disconnect()
+        self.data_transfer_process.deleteLater()
         self.complete.emit()
 
     @staticmethod

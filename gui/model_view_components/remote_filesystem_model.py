@@ -3,6 +3,9 @@ import logging
 from PyQt5 import QtCore, QtWidgets, QtGui
 
 from switch_case import switch
+import os
+import time
+import threading
 
 
 __author__ = 'Галлям'
@@ -71,6 +74,8 @@ class RemoteFileSystemModel(QtCore.QAbstractItemModel):
     def __init__(self):
         super().__init__()
 
+        self._fetch_request_count = 0
+
         self.root_item = FileItem("", True)
 
         self.columnCount = 4
@@ -83,15 +88,17 @@ class RemoteFileSystemModel(QtCore.QAbstractItemModel):
     def fetch_root(self):
         self.read_dir(self.root_item)
 
-    def sort(self, column: int=0, sort_order=None):
-        self.last_fetched_item.children \
-            .sort(key=lambda file_item:
-                  (file_item.type, file_item.file_name, file_item.size))
-        for index in range(self.last_fetched_item.child_count()):
-            self.last_fetched_item.children[index].row = index
+    # def sort(self, column: int=0, sort_order=None):
+    #     self.last_fetched_item.children \
+    #         .sort(key=lambda file_item:
+    #               (file_item.type, file_item.file_name, file_item.size))
+    #     for index in range(self.last_fetched_item.child_count()):
+    #         self.last_fetched_item.children[index].row = index
 
     def read_dir(self, parent: FileItem) -> None:
+        self._fetch_request_count += 1
         self.directory_listing_needed.emit(parent)
+        parent.fetched = True
 
     def data(self, index: QtCore.QModelIndex,
              role: int=QtCore.Qt.DisplayRole) -> QtCore.QVariant:
@@ -160,10 +167,10 @@ class RemoteFileSystemModel(QtCore.QAbstractItemModel):
     def fetchMore(self, index: QtCore.QModelIndex) -> None:
         if index.isValid() and not self.item(index).fetched:
             self.read_dir(self.item(index))
-            self.item(index).fetched = True
-        self.refresh()
+        self.layoutChanged.emit()
 
     def refresh(self):
+        self._fetch_request_count -= 1
         self.layoutChanged.emit()
 
     def columnCount(self, index: QtCore.QModelIndex=None,
@@ -219,10 +226,50 @@ class RemoteFileSystemModel(QtCore.QAbstractItemModel):
 
     def mimeData(self, indexes: list) -> QtCore.QMimeData:
         urls = []
+        data = QtCore.QMimeData()
+
         for index in indexes:
             if index.column() != 0:
                 continue
-            urls.append(QtCore.QUrl("file://" + self.item(index).file_path))
-        data = QtCore.QMimeData()
+
+            item = self.item(index)
+            if item.is_dir:
+                data.setProperty('root', QtCore.QVariant(os.path
+                                                         .basename(item
+                                                                   .file_path)))
+                self.full_fetch(item)
+                for child in iterate_tree(item):
+                    urls.append(QtCore.QUrl("file://" + child.file_path))
+            else:
+                urls.append(QtCore.QUrl("file://" + item.file_path))
+
         data.setUrls(urls)
         return data
+
+    def full_fetch(self, item: FileItem):
+        def fetcher():
+            if not item.fetched:
+                self.read_dir(item)
+            while self._fetch_request_count != 0:
+                time.sleep(0.1)
+            for child in item.children:
+                if child.is_dir:
+                    self.full_fetch(child)
+        Thread(target=fetcher).start()
+
+
+def iterate_tree(parent: FileItem):
+    for child in parent.children:
+        if child.is_dir:
+            yield from iterate_tree(child)
+        else:
+            yield child
+
+
+class Thread(threading.Thread):
+    def __init__(self, target=None):
+        super().__init__(target=target)
+
+    def run(self):
+        super().run()
+        yi

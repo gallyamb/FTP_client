@@ -1,6 +1,7 @@
 import random
 import sys
 import subprocess
+import threading
 
 __author__ = 'Галлям'
 
@@ -46,8 +47,11 @@ class DataTransferProcess(QtCore.QObject):
         self.socket = socket.socket()
         self.is_passive = is_passive
         if is_passive:
-            self.ip = '0.0.0.0'
-            self.port = find_available_port()
+            ip = '0.0.0.0'
+            port = find_available_port()
+            self.port_as_tuple = get_port_as_tuple(port)
+            self.socket.bind((ip, port))
+            self.socket.listen(1)
             self.remote_socket = None
             logger.debug('IP: {0}'.format(self.ip))
             logger.debug('port: {0}'.format(self.port))
@@ -57,19 +61,29 @@ class DataTransferProcess(QtCore.QObject):
     def read_lines(self) -> bytes:
         data = b''
         count = 2 ** 16
-        tmp = self.socket.recv(count)
-        while True:
-            full = data + tmp
-            lines = full.splitlines()[:-1] if tmp else full.splitlines()
-            yield from lines
-            data = full.splitlines()[-1]
-            if not tmp:
-                break
-            tmp = self.socket.recv(count)
+        with self.remote_socket:
+            tmp = self.remote_socket.recv(count)
+            while True:
+                full = data + tmp
+                lines = full.splitlines()[:-1] if tmp else full.splitlines()
+                yield from lines
+                data = full.splitlines()[-1]
+                if not tmp:
+                    break
+                tmp = self.remote_socket.recv(count)
 
-    @QtCore.pyqtSlot(tuple)
     def start_transfer(self, address: tuple):
-        self.socket.connect(address)
+        if self.is_passive:
+            logger.debug('transfer started in passive mode')
+            self.remote_socket, address = self.socket.accept()
+        else:
+            logger.debug('transfer started in active mode')
+            try:
+                self.socket.connect(address)
+            except OSError:
+                self.socket = socket.socket()
+                self.socket.connect(address)
+            self.remote_socket = self.socket
         self.ready.emit()
 
     def upload(self):
@@ -82,7 +96,8 @@ class DataTransferProcess(QtCore.QObject):
 
     def download(self):
         count = 2 ** 16
-        tmp = self.socket.recv(count)
-        while tmp:
-            yield tmp
-            tmp = self.socket.recv(count)
+        with self.remote_socket:
+            tmp = self.remote_socket.recv(count)
+            while tmp:
+                yield tmp
+                tmp = self.remote_socket.recv(count)

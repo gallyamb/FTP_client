@@ -23,10 +23,18 @@ class LocalFileSystemModel(QtWidgets.QDirModel):
         if not index.isValid() or not drop_actions & QtCore.Qt.CopyAction:
             return False
         urls = mime_data.urls()
-        target_path = self.filePath(index)
+        root = mime_data.property('root')
+        print(root)
         for url in urls:
             source_path = os.path.dirname(url.path())
             filename = os.path.basename(url.path())
+            print(source_path)
+            print(filename)
+            target_path = self.filePath(index)
+            print(target_path)
+            if root != '':
+                target_path += source_path[source_path.index(root):]
+                print(target_path)
             self.file_downloading.emit(source_path, target_path, filename)
         return True
 
@@ -35,5 +43,3 @@ class LocalFileSystemModel(QtWidgets.QDirModel):
 
     def supportedDragActions(self) -> QtCore.Qt.DropActions:
         return QtCore.Qt.CopyAction
-
-

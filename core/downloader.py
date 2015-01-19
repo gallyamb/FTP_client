@@ -1,10 +1,12 @@
+import os
 from PyQt5 import QtCore
+import sys
 from core.data_transfer_process import DataTransferProcess
 
 __author__ = 'root'
 
 
-class Downloader(QtCore.QObject):
+class Downloader(QtCore.QThread):
     complete = QtCore.pyqtSignal()
 
     def __init__(self, path_to_save: str, filename: str,
@@ -14,10 +16,14 @@ class Downloader(QtCore.QObject):
         self.filename = filename
 
         self.data_transfer_process = DataTransferProcess() if dt is None else dt
-        self.data_transfer_process.ready.connect(self.start_downloading)
+        self.data_transfer_process.ready.connect(self.start)
 
-    def start_downloading(self):
+    def run(self):
+        if not os.path.exists(self.path_to_save):
+            os.makedirs(self.path_to_save)
         with open(self.path_to_save + '/' + self.filename, 'wb') as file:
             for data in self.data_transfer_process.download():
                 file.write(data)
+        self.data_transfer_process.ready.disconnect()
+        self.data_transfer_process.deleteLater()
         self.complete.emit()
